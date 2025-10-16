@@ -129,4 +129,50 @@ class ApiController extends Controller
             return response()->json(['message' => 'Internal Server Error'], 500);
         }
     }
+
+    public function getUsers(Request $request)
+    {
+        try {
+            $users = User::all();
+
+            $mappedData = $users->map(function ($user) {
+                $userArray = $user->toArray();
+                $newObject = [];
+
+                // Convert camelCase keys to snake_case
+                foreach ($userArray as $key => $value) {
+                    $newObject[\Str::snake($key)] = $value;
+                }
+
+                // Add extra fixed keys
+                $newObject['employee_number']   = $user->id;
+                $newObject['shop_id']           = $user->business_id;
+                $newObject['user_type']         = 0;
+                $newObject['till_type']         = 0;
+                $newObject['group_id']          = 0;
+                $newObject['discount_group_id'] = 0;
+                $newObject['active']            = 1;
+                $newObject['name']              = $user->username ?? $user->name;
+                $newObject['is_deleted']        = false;
+
+                return $newObject;
+            });
+
+            return response()->json([
+                'Status'     => '0',
+                'error_code' => null,
+                'message'    => 'Success',
+                'Response'   => [
+                    'users' => $mappedData
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'Status'     => '1',
+                'error_code' => 500,
+                'message'    => 'Internal Server Error',
+                'Response'   => null,
+            ], 500);
+        }
+    }
 }
