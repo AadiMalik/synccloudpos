@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\User;
+use App\Variation;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -174,5 +175,60 @@ class ApiController extends Controller
                 'Response'   => null,
             ], 500);
         }
+    }
+
+    public function getProducts(Request $request)
+    {
+        $business_id = $request->get('business_id');
+        $location_id = $request->get('location_id');
+        $products = Variation::select(
+            'p.id as product_id',
+            'p.name',
+            'p.type',
+            'p.enable_stock',
+            'p.image as product_image',
+            'variations.id',
+            'variations.name as variation',
+            'VLD.qty_available',
+            'variations.default_sell_price as selling_price',
+            'variations.sub_sku'
+        )
+        ->join('products as p', 'variations.product_id', '=', 'p.id')
+            ->join('product_locations as pl', 'pl.product_id', '=', 'p.id')
+            ->leftjoin(
+                'variation_location_details AS VLD',
+                function ($join) use ($location_id) {
+                    $join->on('variations.id', '=', 'VLD.variation_id');
+
+                    //Include Location
+                    if (!empty($location_id)) {
+                        $join->where(function ($query) use ($location_id) {
+                            $query->where('VLD.location_id', '=', $location_id);
+                            //Check null to show products even if no quantity is available in a location.
+                            //TODO: Maybe add a settings to show product not available at a location or not.
+                            $query->orWhereNull('VLD.location_id');
+                        });
+                    }
+                }
+            )
+            ->where('p.business_id', $business_id)
+            ->where('p.type', '!=', 'modifier')
+            ->where('p.is_inactive', 0)
+            ->where('p.not_for_selling', 0)
+            ->where('VLD.qty_available', '>', 0)
+            ->where(function ($q) use ($location_id) {
+                $q->where('pl.location_id', $location_id);
+            })
+            ->orderBy('p.name', 'asc')
+            ->get();
+
+        return response()->json([
+            'Status'     => '0',
+            'error_code' => null,
+            'message'    => 'Success',
+            'Response'   => [
+                'products' => $products
+            ]
+        ]);
     }
 }
