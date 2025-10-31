@@ -24,4 +24,8 @@ Route::middleware('auth:api')->group(function () {
     Route::post('/refresh-token', [ApiController::class, 'refreshToken']);
     Route::get('/pos-login/{token}', [ApiController::class, 'tokenData']);
     Route::get('/credentials/{id}', [ApiController::class, 'showData']);
+
+    Route::post('/get-shops', [ApiController::class, 'getShops']);
+    Route::post('/get-products', [ApiController::class, 'getProducts']);
+    Route::post('/synced-products', [ApiController::class, 'syncedProducts']);
 });

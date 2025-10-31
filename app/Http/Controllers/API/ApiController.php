@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers\API;
 
+use App\BusinessLocation;
 use App\Http\Controllers\Controller;
+use App\Product;
 use App\User;
 use App\Variation;
 use Exception;
@@ -177,6 +179,20 @@ class ApiController extends Controller
         }
     }
 
+    public function getShops(Request $request)
+    {
+
+        $shops = BusinessLocation::where('business_id', $request->get('business_id'))->get();
+        return response()->json([
+            'Status'     => '0',
+            'error_code' => null,
+            'message'    => 'Success',
+            'Response'   => [
+                'shops' => $shops
+            ]
+        ]);
+    }
+
     public function getProducts(Request $request)
     {
         $business_id = $request->get('business_id');
@@ -216,6 +232,7 @@ class ApiController extends Controller
             ->where('p.is_inactive', 0)
             ->where('p.not_for_selling', 0)
             ->where('VLD.qty_available', '>', 0)
+            ->where('p.is_synced', 0)
             ->where(function ($q) use ($location_id) {
                 $q->where('pl.location_id', $location_id);
             })
@@ -230,5 +247,22 @@ class ApiController extends Controller
                 'products' => $products
             ]
         ]);
+    }
+
+    public function syncedProducts(Request $request)
+    {
+        if (!is_array($request->keepings)) {
+            return response()->json(['message' => 'Sync status update error.'], 422);
+        }
+        try {
+            $keepingIds = collect($request->keepings)->pluck('keeping_id')->toArray();
+
+            // Update all records in bulk
+            Product::whereIn('product_id', $keepingIds)
+                ->update(['is_synced' => 1]);
+            return response()->json(['message' => 'Sync status updated successfully']);
+        } catch (Exception $e) {
+            return response()->json(['message' => 'Internal Server Error', 'error' => $e->getMessage()], 500);
+        }
     }
 }
