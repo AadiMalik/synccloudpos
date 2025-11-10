@@ -239,7 +239,7 @@ class ApiController extends Controller
             'variations.default_sell_price as selling_price',
             'variations.sub_sku'
         )
-            ->join('products as p', 'variations.product_id', '=', 'p.id')
+        ->join('products as p', 'variations.product_id', '=', 'p.id')
             ->join('product_locations as pl', 'pl.product_id', '=', 'p.id')
             ->leftjoin(
                 'variation_location_details AS VLD',
