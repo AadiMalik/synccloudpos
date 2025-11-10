@@ -2,18 +2,48 @@
 
 namespace App\Http\Controllers\API;
 
+use App\Business;
 use App\BusinessLocation;
+use App\Contact;
 use App\Http\Controllers\Controller;
 use App\Product;
+use App\Transaction;
+use App\TransactionSellLine;
 use App\User;
 use App\Variation;
+use Carbon\Carbon;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
+use App\Utils\ModuleUtil;
+use Illuminate\Support\Facades\DB;
+use App\Utils\NotificationUtil;
+use App\Utils\ProductUtil;
+use App\Utils\TransactionUtil;
+use App\Utils\BusinessUtil;
 
 class ApiController extends Controller
 {
+
+    protected $moduleUtil;
+    protected $productUtil;
+    protected $transactionUtil;
+    protected $notificationUtil;
+    protected $businessUtil;
+    public function __construct(
+        ModuleUtil $moduleUtil,
+        ProductUtil $productUtil,
+        TransactionUtil $transactionUtil,
+        NotificationUtil $notificationUtil,
+        BusinessUtil $businessUtil
+    ) {
+        $this->moduleUtil = $moduleUtil;
+        $this->productUtil = $productUtil;
+        $this->transactionUtil = $transactionUtil;
+        $this->notificationUtil = $notificationUtil;
+        $this->businessUtil = $businessUtil;
+    }
     public function login(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -263,6 +293,195 @@ class ApiController extends Controller
             return response()->json(['message' => 'Sync status updated successfully']);
         } catch (Exception $e) {
             return response()->json(['message' => 'Internal Server Error', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    public function syncOrdersApi(Request $request)
+    {
+        try {
+            $api_token = $request->header('API-TOKEN');
+            $api_settings = $this->moduleUtil->getApiSettings($api_token);
+
+            if (empty($api_settings)) {
+                return response()->json([
+                    'Status' => '1',
+                    'error_code' => null,
+                    'message' => 'Invalid API Token',
+                    'Response' => ['results' => []],
+                ]);
+            }
+
+            $business_id = $api_settings->business_id;
+            $location_id = $api_settings->location_id;
+
+            $orders = $request->input('orders', []);
+            if (empty($orders)) {
+                return response()->json([
+                    'Status' => '1',
+                    'error_code' => null,
+                    'message' => 'No orders received',
+                    'Response' => ['results' => []],
+                ]);
+            }
+
+            $synced_ids = [];
+
+            DB::beginTransaction();
+
+            foreach ($orders as $torder) {
+                $products = $torder['prouducts'] ?? []; // note typo from Node
+                unset($torder['prouducts']);
+
+                // ✅ Convert snake_case → camelCase if needed
+                $orderData = [];
+                foreach ($torder as $key => $value) {
+                    $orderData[\Illuminate\Support\Str::camel($key)] = $value;
+                }
+
+                // ✅ Required columns that NodeJS inserted manually
+                $orderData['business_id'] = $business_id;
+                $orderData['location_id'] = $location_id;
+                $orderData['is_draft'] = $orderData['isDraft'] ?? false;
+                $orderData['final_total'] = $orderData['totalAmount'] ?? 0;
+                $orderData['status'] = $orderData['is_draft'] ? 'draft' : 'final';
+                $orderData['created_by'] = $api_settings->user_id ?? 1; // 🔸 Hardcoded fallback
+                $orderData['transaction_date'] = now();
+
+                // 🔸 Need table/columns to store external order ID (from POS or App)
+                // Suggest adding: external_order_id VARCHAR(100)
+                $orderData['external_order_id'] = $torder['id'] ?? null;
+
+                // 🔸 Create Order transaction
+                $transaction = Transaction::create($orderData);
+                $synced_ids[] = ['id' => $transaction->id];
+
+                // 🔸 Insert related products
+                foreach ($products as $product) {
+                    $productData = [];
+                    foreach ($product as $key => $value) {
+                        $productData[\Illuminate\Support\Str::camel($key)] = $value;
+                    }
+
+                    $productData['transaction_id'] = $transaction->id;
+                    $productData['business_id'] = $business_id;
+                    $productData['location_id'] = $location_id;
+                    $productData['subtotal'] = ($productData['unitPrice'] ?? 0) * ($productData['quantity'] ?? 0);
+
+                    TransactionSellLine::create($productData);
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'Status' => '0',
+                'error_code' => null,
+                'message' => 'Success',
+                'Response' => ['results' => $synced_ids],
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Sync Order API Error: ' . $e->getMessage() . ' | Line: ' . $e->getLine());
+
+            return response()->json([
+                'Status' => '1',
+                'error_code' => null,
+                'message' => 'Failed!',
+                'Response' => ['results' => [$e->getMessage()]],
+            ]);
+        }
+    }
+
+    public function getCustomer(Request $request)
+    {
+        try {
+            // Validate input
+            if (empty($request->customer_no)) {
+                return response()->json([
+                    'Status' => '1',
+                    'error_code' => null,
+                    'message' => 'Invalid params.',
+                    'Response' => ['results' => []],
+                ], 422);
+            }
+
+            // 🔸 Fetch customer by customer_no
+            $customer = Contact::where('contact_id', $request->customer_no)
+                ->whereIn('type', ['customer', 'both'])
+                ->first();
+
+            if (!$customer) {
+                return response()->json([
+                    'Status' => '1',
+                    'error_code' => null,
+                    'message' => 'Customer not found',
+                    'Response' => ['results' => []],
+                ], 404);
+            }
+
+            return response()->json([
+                'Status' => '0',
+                'error_code' => null,
+                'message' => 'Customer retrieved successfully',
+                'Response' => [
+                    'results' => $customer,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Get Customer API Error: ' . $e->getMessage() . ' | Line: ' . $e->getLine());
+            return response()->json([
+                'Status' => '1',
+                'error_code' => null,
+                'message' => 'Internal Server Error',
+                'Response' => ['results' => []],
+            ], 500);
+        }
+    }
+    public function getCustomDiscounts()
+    {
+        try {
+
+            $data = [
+                [
+                    'id' => 1,
+                    'category_id' => 1,
+                    'title' => 'Discount 1',
+                    'description' => 'Description for Discount 1',
+                    'discount_type' => 0,
+                    'discount_value' => 10.0,
+                    'created_at' => now()->toDateTimeString(),
+                    'updated_at' => now()->toDateTimeString(),
+                    'is_deleted' => false,
+                ],
+                [
+                    'id' => 2,
+                    'category_id' => 2,
+                    'title' => 'Discount 2',
+                    'description' => 'Description for Discount 2',
+                    'discount_type' => 1,
+                    'discount_value' => 5.0,
+                    'created_at' => now()->toDateTimeString(),
+                    'updated_at' => now()->toDateTimeString(),
+                    'is_deleted' => false,
+                ],
+            ];
+
+            return response()->json([
+                'Status' => '0',
+                'error_code' => null,
+                'message' => 'Success',
+                'Response' => [
+                    'results' => $data,
+                ],
+            ], 200);
+        } catch (\Exception $e) {
+            \Log::error('Get Custom Discounts API Error: ' . $e->getMessage() . ' | Line: ' . $e->getLine());
+            return response()->json([
+                'Status' => '1',
+                'error_code' => null,
+                'message' => 'Internal Server Error',
+                'Response' => ['results' => []],
+            ], 500);
         }
     }
 }

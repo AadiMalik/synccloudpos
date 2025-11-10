@@ -28,4 +28,7 @@ Route::middleware('auth:api')->group(function () {
     Route::post('/get-shops', [ApiController::class, 'getShops']);
     Route::post('/get-products', [ApiController::class, 'getProducts']);
     Route::post('/synced-products', [ApiController::class, 'syncedProducts']);
+    Route::post('/sync-orders', [ApiController::class, 'syncOrdersApi']);
+    Route::post('/get-customer', [ApiController::class, 'getCustomer']);
+    Route::post('/get-custom-discounts', [ApiController::class, 'getCustomDiscounts']);
 });
