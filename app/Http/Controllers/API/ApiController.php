@@ -44,6 +44,89 @@ class ApiController extends Controller
         $this->notificationUtil = $notificationUtil;
         $this->businessUtil = $businessUtil;
     }
+    public function shopLogin(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'username'      => 'required|string',
+            'password'      => 'required|string',
+            'client_id'     => 'required',
+            'secret_id'     => 'required',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Validation errors',
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
+
+        $credentials = $request->only('username', 'password');
+
+        if (!Auth::attempt($credentials)) {
+            return response()->json([
+                'Status'     => '1',
+                'error_code' => 404,
+                'message'    => 'Invalid username or password',
+                'Response'   => null
+            ], 404);
+        }
+
+        $user = Auth::user();
+        if ($user->business_id != $request->client_id) {
+            return response()->json([
+                'Status'     => '1',
+                'error_code' => 404,
+                'message'    => 'Client ID does not match',
+                'Response'   => null
+            ], 404);
+        }
+
+        if ($user->location_id != $request->secret_id) {
+            return response()->json([
+                'Status'     => '1',
+                'error_code' => 404,
+                'message'    => 'Secret ID does not match',
+                'Response'   => null
+            ], 404);
+        }
+        $tokenResult = $user->createToken('Personal Access Token');
+
+        // 🔹 Convert keys to snake_case if needed
+        $data = [
+            'id' => $user->id,
+            'employee_number' => $user->id,
+            'first_name' => $user->first_name,
+            'last_name' => $user->last_name,
+            'email' => $user->email,
+            'store_id' => $user->location_id ?? 0,
+            'phone' => $user->contact_no,
+            'address' => $user->permanent_address,
+            'city' => null,
+            'user_type' => $user->tilType ?? null,
+            'hire_date' => null,
+            'end_date' => null,
+        ];
+        if (!$data) {
+            return response()->json([
+                'Status'     => '1',
+                'error_code' => 404,
+                'message'    => 'User not found',
+                'Response'   => null
+            ], 404);
+        }
+        return response()->json([
+            'Status'     => '0',
+            'error_code' => null,
+            'message'    => 'Success',
+            'Response'   => [
+                'access_token' => [
+                    'access_token' => $tokenResult->accessToken,
+                ],
+                'data' => $data,
+            ],
+        ], 200);
+    }
     public function login(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -92,7 +175,48 @@ class ApiController extends Controller
             ],
         ], 200);
     }
+    // shop detail
+    public function configrations(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'store_id'      => 'required',
+        ]);
 
+        if ($validator->fails()) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Validation errors',
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
+
+        $location = BusinessLocation::find($request->store_id);
+        // 🔹 Convert keys to snake_case if needed
+        $data = [
+            'id' => $location->id,
+            'store_code' => $location->location_id,
+            'store_name' => $location->name,
+            'shop_name' => $location->name,
+            'store_logo' => null,
+            'invoice_terms' => null,
+        ];
+        if (!$data) {
+            return response()->json([
+                'Status'     => '1',
+                'error_code' => 404,
+                'message'    => 'configration not found',
+                'Response'   => null
+            ], 404);
+        }
+        return response()->json([
+            'Status'     => '0',
+            'error_code' => null,
+            'message'    => 'Success',
+            'Response'   => [
+                'data' => $data,
+            ],
+        ], 200);
+    }
     public function refreshToken(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -165,8 +289,19 @@ class ApiController extends Controller
 
     public function getUsers(Request $request)
     {
+        $validator = Validator::make($request->all(), [
+            'shop_id'      => 'required',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Validation errors',
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
         try {
-            $users = User::all();
+            $users = User::where('location_id', $request->store_id)->get();
 
             $mappedData = $users->map(function ($user) {
                 $userArray = $user->toArray();
@@ -225,8 +360,20 @@ class ApiController extends Controller
 
     public function getProducts(Request $request)
     {
-        $business_id = $request->get('business_id');
-        $location_id = $request->get('location_id');
+        $validator = Validator::make($request->all(), [
+            'client_id'     => 'required',
+            'secret_id'     => 'required'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Validation errors',
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
+        $business_id = $request->get('client_id');
+        $location_id = $request->get('secret_id');
         $products = Variation::select(
             'p.id as product_id',
             'p.name',
@@ -239,7 +386,7 @@ class ApiController extends Controller
             'variations.default_sell_price as selling_price',
             'variations.sub_sku'
         )
-        ->join('products as p', 'variations.product_id', '=', 'p.id')
+            ->join('products as p', 'variations.product_id', '=', 'p.id')
             ->join('product_locations as pl', 'pl.product_id', '=', 'p.id')
             ->leftjoin(
                 'variation_location_details AS VLD',
@@ -278,6 +425,55 @@ class ApiController extends Controller
             ]
         ]);
     }
+
+    public function getProductById(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'product_id' => 'required',
+            'location_id' => 'required'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Validation errors',
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
+
+        $product = Variation::select(
+            'p.id as product_id',
+            'p.name as product_name',
+            'VLD.qty_available as quantity'
+        )
+            ->join('products as p', 'variations.product_id', '=', 'p.id')
+            ->join('product_locations as pl', 'pl.product_id', '=', 'p.id')
+            ->leftJoin('variation_location_details as VLD', function ($join) use ($request) {
+                $join->on('variations.id', '=', 'VLD.variation_id')
+                    ->where('VLD.location_id', $request->location_id);  // Filter by location
+            })
+            ->where('p.id', $request->product_id)
+            ->first();
+
+        if (!$product) {
+            return response()->json([
+                'Status'     => '1',
+                'error_code' => 404,
+                'message'    => 'Product not found',
+                'Response'   => null
+            ], 404);
+        }
+
+        return response()->json([
+            'Status'     => '0',
+            'error_code' => null,
+            'message'    => 'Success',
+            'Response'   => [
+                'products' => $product
+            ]
+        ], 200);
+    }
+
 
     public function syncedProducts(Request $request)
     {
