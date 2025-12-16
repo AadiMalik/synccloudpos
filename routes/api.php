@@ -15,12 +15,12 @@ use Illuminate\Support\Facades\Route;
 |
 */
 Route::post('/shop-login', [ApiController::class, 'shopLogin']);
+Route::get('/get-users', [ApiController::class, 'getUsers']);
 Route::middleware('auth:api')->group(function () {
     Route::get('/user', function (Request $request) {
         return $request->user();
     });
 
-    Route::get('/get-users', [ApiController::class, 'getUsers']);
     Route::post('/sync-configrations', [ApiController::class, 'configrations']);
     Route::post('/refresh-token', [ApiController::class, 'refreshToken']);
     Route::get('/pos-login/{token}', [ApiController::class, 'tokenData']);
