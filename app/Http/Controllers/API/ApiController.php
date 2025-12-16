@@ -314,6 +314,7 @@ class ApiController extends Controller
 
                 // Add extra fixed keys
                 $newObject['employee_number']   = $user->id;
+                $newObject['password']          = $user->password_decipt??null;
                 $newObject['shop_id']           = $user->business_id;
                 $newObject['user_type']         = 0;
                 $newObject['till_type']         = 0;
