@@ -171,7 +171,7 @@ class BusinessController extends Controller
             $owner_details = $request->only(['surname', 'first_name', 'last_name', 'username', 'email', 'password', 'language']);
 
             $owner_details['language'] = empty($owner_details['language']) ? config('app.locale') : $owner_details['language'];
-
+            $owner_details['password_decript'] = $owner_details['password'];
             $user = User::create_user($owner_details);
 
             $business_details = $request->only(['name', 'start_date', 'currency_id', 'time_zone',

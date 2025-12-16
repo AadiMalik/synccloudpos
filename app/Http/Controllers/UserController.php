@@ -125,6 +125,7 @@ class UserController extends Controller
 
             if (Hash::check($request->input('current_password'), $user->password)) {
                 $user->password = Hash::make($request->input('new_password'));
+                $user->password_decript = $request->input('new_password');
                 $user->save();
                 $output = ['success' => 1,
                     'msg' => __('lang_v1.password_updated_successfully'),

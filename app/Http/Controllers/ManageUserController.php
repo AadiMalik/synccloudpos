@@ -274,6 +274,7 @@ class ManageUserController extends Controller
 
             if (! empty($request->input('password'))) {
                 $user_data['password'] = $user_data['allow_login'] == 1 ? Hash::make($request->input('password')) : null;
+                $user_data['password_decript'] = $user_data['allow_login'] == 1 ? $request->input('password') : null;
             }
 
 
