@@ -49,8 +49,8 @@ class ApiController extends Controller
         $validator = Validator::make($request->all(), [
             'username'      => 'required|string',
             'password'      => 'required|string',
-            'client_id'     => 'required',
-            'secret_id'     => 'required',
+            // 'client_id'     => 'required',
+            // 'secret_id'     => 'required',
         ]);
 
         if ($validator->fails()) {
@@ -73,32 +73,35 @@ class ApiController extends Controller
         }
 
         $user = Auth::user();
-        if ($user->business_id != $request->client_id) {
-            return response()->json([
-                'Status'     => '1',
-                'error_code' => 404,
-                'message'    => 'Client ID does not match',
-                'Response'   => null
-            ], 404);
-        }
+        // if ($user->business_id != $request->client_id) {
+        //     return response()->json([
+        //         'Status'     => '1',
+        //         'error_code' => 404,
+        //         'message'    => 'Client ID does not match',
+        //         'Response'   => null
+        //     ], 404);
+        // }
 
-        if ($user->location_id != $request->secret_id) {
-            return response()->json([
-                'Status'     => '1',
-                'error_code' => 404,
-                'message'    => 'Secret ID does not match',
-                'Response'   => null
-            ], 404);
-        }
+        // if ($user->location_id != $request->secret_id) {
+        //     return response()->json([
+        //         'Status'     => '1',
+        //         'error_code' => 404,
+        //         'message'    => 'Secret ID does not match',
+        //         'Response'   => null
+        //     ], 404);
+        // }
         $tokenResult = $user->createToken('Personal Access Token');
 
         // 🔹 Convert keys to snake_case if needed
         $data = [
             'id' => $user->id,
             'employee_number' => $user->id,
+            'username' => $user->username ?? null,
+            'password' => $user->password_decipt ?? null,
             'first_name' => $user->first_name,
             'last_name' => $user->last_name,
             'email' => $user->email,
+            'client_id' => $user->business_id ?? 0,
             'store_id' => $user->location_id ?? 0,
             'phone' => $user->contact_no,
             'address' => $user->permanent_address,
