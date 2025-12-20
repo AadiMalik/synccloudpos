@@ -107,7 +107,7 @@ class ApiController extends Controller
             'address' => $user->permanent_address,
             'city' => null,
             'user_type' => $user->tilType ?? null,
-            'hire_date' => null,
+            'hire_date' => $user->hire_date ?? Carbon::now(),
             'end_date' => null,
         ];
         if (!$data) {
@@ -348,10 +348,10 @@ class ApiController extends Controller
         }
     }
 
-    public function getShops(Request $request)
+    public function getShops()
     {
 
-        $shops = BusinessLocation::where('business_id', $request->get('business_id'))->get();
+        $shops = BusinessLocation::where('business_id', auth()->user()->business_id)->get();
         return response()->json([
             'Status'     => '0',
             'error_code' => null,

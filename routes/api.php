@@ -15,7 +15,6 @@ use Illuminate\Support\Facades\Route;
 |
 */
 Route::post('/shop-login', [ApiController::class, 'shopLogin']);
-Route::get('/get-users', [ApiController::class, 'getUsers']);
 Route::middleware('auth:api')->group(function () {
     Route::get('/user', function (Request $request) {
         return $request->user();
@@ -27,6 +26,7 @@ Route::middleware('auth:api')->group(function () {
     Route::get('/credentials/{id}', [ApiController::class, 'showData']);
 
     Route::post('/get-shops', [ApiController::class, 'getShops']);
+    Route::get('/get-users', [ApiController::class, 'getUsers']);
     Route::post('/get-products', [ApiController::class, 'getProducts']);
     Route::post('/get-product-by-id', [ApiController::class, 'getProductById']);
     Route::post('/synced-products', [ApiController::class, 'syncedProducts']);
