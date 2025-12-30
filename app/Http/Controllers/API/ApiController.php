@@ -317,7 +317,7 @@ class ApiController extends Controller
 
                 // Add extra fixed keys
                 $newObject['employee_number']   = $user->id;
-                $newObject['password']          = $user->password_decipt??null;
+                $newObject['password']          = $user->password_decipt ?? null;
                 $newObject['shop_id']           = $user->business_id;
                 $newObject['user_type']         = 0;
                 $newObject['till_type']         = 0;
@@ -365,8 +365,9 @@ class ApiController extends Controller
     public function getProducts(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'client_id'     => 'required',
-            'secret_id'     => 'required'
+            'store_id' => 'required|integer',
+            'page'     => 'nullable|integer|min:1',
+            'per_page' => 'nullable|integer|in:10,25,50,100'
         ]);
 
         if ($validator->fails()) {
@@ -376,56 +377,141 @@ class ApiController extends Controller
                 'errors'  => $validator->errors(),
             ], 422);
         }
-        $business_id = $request->get('client_id');
-        $location_id = $request->get('secret_id');
-        $products = Variation::select(
-            'p.id as product_id',
-            'p.name',
-            'p.type',
-            'p.enable_stock',
-            'p.image as product_image',
-            'variations.id',
-            'variations.name as variation',
-            'VLD.qty_available',
-            'variations.default_sell_price as selling_price',
-            'variations.sub_sku'
-        )
-            ->join('products as p', 'variations.product_id', '=', 'p.id')
-            ->join('product_locations as pl', 'pl.product_id', '=', 'p.id')
-            ->leftjoin(
-                'variation_location_details AS VLD',
-                function ($join) use ($location_id) {
-                    $join->on('variations.id', '=', 'VLD.variation_id');
 
-                    //Include Location
-                    if (!empty($location_id)) {
-                        $join->where(function ($query) use ($location_id) {
-                            $query->where('VLD.location_id', '=', $location_id);
-                            //Check null to show products even if no quantity is available in a location.
-                            //TODO: Maybe add a settings to show product not available at a location or not.
-                            $query->orWhereNull('VLD.location_id');
-                        });
-                    }
-                }
-            )
-            ->where('p.business_id', $business_id)
+        $locationId = $request->store_id;
+        $page       = $request->page ?? 1;
+        $perPage    = $request->per_page ?? 10;
+
+        $location = BusinessLocation::findOrFail($locationId);
+
+        /*
+    |--------------------------------------------------------------------------
+    | Step 1: Product IDs pagination (IMPORTANT)
+    |--------------------------------------------------------------------------
+    | Pagination product level par hogi
+    */
+        $productIds = DB::table('products as p')
+            ->join('product_locations as pl', function ($q) use ($locationId) {
+                $q->on('pl.product_id', '=', 'p.id')
+                    ->where('pl.location_id', $locationId);
+            })
             ->where('p.type', '!=', 'modifier')
             ->where('p.is_inactive', 0)
             ->where('p.not_for_selling', 0)
-            ->where('VLD.qty_available', '>', 0)
             ->where('p.is_synced', 0)
-            ->where(function ($q) use ($location_id) {
-                $q->where('pl.location_id', $location_id);
+            ->orderBy('p.id')
+            ->paginate($perPage, ['p.id'], 'page', $page);
+
+        /*
+    |--------------------------------------------------------------------------
+    | Step 2: Fetch variations for paginated products
+    |--------------------------------------------------------------------------
+    */
+        $rows = DB::table('variations as v')
+            ->join('products as p', 'p.id', '=', 'v.product_id')
+            ->leftJoin('variation_location_details as vld', function ($q) use ($locationId) {
+                $q->on('vld.variation_id', '=', 'v.id')
+                    ->where('vld.location_id', $locationId);
             })
-            ->orderBy('p.name', 'asc')
+            ->whereIn('p.id', $productIds->pluck('id'))
+            ->select(
+                'p.id as product_id',
+                'p.name as product_name',
+                'p.enable_stock',
+                'p.image',
+                'p.is_synced',
+
+                'v.id as variation_id',
+                'v.name as variation_name',
+                'v.variation_value_id',
+                'v.sub_sku',
+                'v.default_sell_price',
+
+                DB::raw('IFNULL(vld.qty_available,0) as qty_available')
+            )
+            ->orderBy('p.id')
             ->get();
+
+        /*
+    |--------------------------------------------------------------------------
+    | Step 3: Group by Product
+    |--------------------------------------------------------------------------
+    */
+        $products = $rows->groupBy('product_id')->map(function ($items) use ($location) {
+
+            $first = $items->first();
+
+            return [
+
+                // ========== STR / Shop ==========
+                'FromShop' => $location->name,
+                'ToShop'   => null,
+                'StrName'  => $location->name,
+                'Skip'     => 0,
+                'StrId'    => $location->id,
+
+                // ========== Product ==========
+                'ProductId' => (int) $first->product_id,
+                'Name'      => $first->product_name,
+                'FreePrice' => $first->enable_stock == 0,
+                'ThumbPath' => $first->image ?? null,
+
+                // ========== Stock ==========
+                'KeepId'           => null,
+                'DispatchQuantity' => null,
+                'Quantity'         => (float) $items->sum('qty_available'),
+                'UnitPrice'        => (float) $items->min('default_sell_price'),
+
+                // ========== Codes ==========
+                'BarCode'       => null,
+                'AlternateCode' => null,
+
+                // ========== STR ==========
+                'StrShopRequestId' => null,
+
+                // ========== Unit ==========
+                'Unit'     => null,
+                'UnitCode' => null,
+
+                // ========== Attributes ==========
+                'Attributes' => $items->map(function ($row) {
+                    return [
+                        'PosProductId'     => (int) $row->product_id,
+                        'AttributeId'      => (int) $row->variation_id,
+                        'Attribute'        => $row->variation_name ?? null,
+                        'AttributeValueId' => $row->variation_value_id ?? null,
+                        'AttributeValue'   => $row->variation_name ?? null,
+                    ];
+                })->values(),
+
+                // ========== Quantity Log ==========
+                'QuantityLog' => [
+                    'POSProductId' => (int) $first->product_id,
+                    'KeepId'       => null,
+                    'StrProductId' => (int) $first->product_id,
+                    'Quantity'     => (float) $items->sum('qty_available'),
+                    'FromShopId'   => null,
+                    'ToShopId'     => null,
+                ],
+
+                // ========== Sync ==========
+                'isSync' => (bool) $first->is_synced
+            ];
+        })->values();
 
         return response()->json([
             'Status'     => '0',
             'error_code' => null,
             'message'    => 'Success',
             'Response'   => [
-                'products' => $products
+                'products' => $products,
+                'pagination' => [
+                    'current_page' => $productIds->currentPage(),
+                    'per_page'     => $productIds->perPage(),
+                    'total'        => $productIds->total(),
+                    'last_page'    => $productIds->lastPage(),
+                    'has_more'     => $productIds->hasMorePages(),
+                ]
             ]
         ]);
     }
@@ -434,7 +520,7 @@ class ApiController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'product_id' => 'required',
-            'location_id' => 'required'
+            'store_id' => 'required'
         ]);
 
         if ($validator->fails()) {
@@ -454,7 +540,7 @@ class ApiController extends Controller
             ->join('product_locations as pl', 'pl.product_id', '=', 'p.id')
             ->leftJoin('variation_location_details as VLD', function ($join) use ($request) {
                 $join->on('variations.id', '=', 'VLD.variation_id')
-                    ->where('VLD.location_id', $request->location_id);  // Filter by location
+                    ->where('VLD.location_id', $request->store_id);  // Filter by location
             })
             ->where('p.id', $request->product_id)
             ->first();
