@@ -398,7 +398,6 @@ class ApiController extends Controller
             ->where('p.type', '!=', 'modifier')
             ->where('p.is_inactive', 0)
             ->where('p.not_for_selling', 0)
-            ->where('p.is_synced', 0)
             ->orderBy('p.id')
             ->paginate($perPage, ['p.id'], 'page', $page);
 
@@ -419,16 +418,17 @@ class ApiController extends Controller
                 'p.name as product_name',
                 'p.enable_stock',
                 'p.image',
-                'p.is_synced',
 
                 'v.id as variation_id',
                 'v.name as variation_name',
                 'v.variation_value_id',
                 'v.sub_sku',
                 'v.default_sell_price',
+                'v.is_synced',
 
                 DB::raw('IFNULL(vld.qty_available,0) as qty_available')
             )
+            ->where('v.is_synced', 0)
             ->orderBy('p.id')
             ->get();
 
@@ -445,7 +445,7 @@ class ApiController extends Controller
 
                 // ========== STR / Shop ==========
                 'FromShop' => $location->name,
-                'ToShop'   => null,
+                'ToShop'   => 0,
                 'StrName'  => $location->name,
                 'Skip'     => 0,
                 'StrId'    => $location->id,
@@ -454,24 +454,24 @@ class ApiController extends Controller
                 'ProductId' => (int) $first->product_id,
                 'Name'      => $first->product_name,
                 'FreePrice' => $first->enable_stock == 0,
-                'ThumbPath' => $first->image ?? null,
+                'ThumbPath' => $first->image ?? '',
 
                 // ========== Stock ==========
-                'KeepId'           => null,
-                'DispatchQuantity' => null,
+                'KeepId'           => (int) $first->product_id,
+                'DispatchQuantity' => 0,
                 'Quantity'         => (float) $items->sum('qty_available'),
                 'UnitPrice'        => (float) $items->min('default_sell_price'),
 
                 // ========== Codes ==========
-                'BarCode'       => null,
-                'AlternateCode' => null,
+                'BarCode'       => '',
+                'AlternateCode' => '',
 
                 // ========== STR ==========
-                'StrShopRequestId' => null,
+                'StrShopRequestId' => 0,
 
                 // ========== Unit ==========
-                'Unit'     => null,
-                'UnitCode' => null,
+                'Unit'     => '',
+                'UnitCode' => 0,
 
                 // ========== Attributes ==========
                 'Attributes' => $items->map(function ($row) {
@@ -487,11 +487,11 @@ class ApiController extends Controller
                 // ========== Quantity Log ==========
                 'QuantityLog' => [
                     'POSProductId' => (int) $first->product_id,
-                    'KeepId'       => null,
+                    'KeepId'       => 0,
                     'StrProductId' => (int) $first->product_id,
                     'Quantity'     => (float) $items->sum('qty_available'),
-                    'FromShopId'   => null,
-                    'ToShopId'     => null,
+                    'FromShopId'   => 0,
+                    'ToShopId'     => 0,
                 ],
 
                 // ========== Sync ==========
@@ -574,7 +574,7 @@ class ApiController extends Controller
             $keepingIds = collect($request->keepings)->pluck('keeping_id')->toArray();
 
             // Update all records in bulk
-            Product::whereIn('product_id', $keepingIds)
+            Variation::whereIn('id', $keepingIds)
                 ->update(['is_synced' => 1]);
             return response()->json(['message' => 'Sync status updated successfully']);
         } catch (Exception $e) {
