@@ -384,12 +384,6 @@ class ApiController extends Controller
 
         $location = BusinessLocation::findOrFail($locationId);
 
-        /*
-    |--------------------------------------------------------------------------
-    | Step 1: Product IDs pagination (IMPORTANT)
-    |--------------------------------------------------------------------------
-    | Pagination product level par hogi
-    */
         $productIds = DB::table('products as p')
             ->join('product_locations as pl', function ($q) use ($locationId) {
                 $q->on('pl.product_id', '=', 'p.id')
@@ -401,11 +395,6 @@ class ApiController extends Controller
             ->orderBy('p.id')
             ->paginate($perPage, ['p.id'], 'page', $page);
 
-        /*
-    |--------------------------------------------------------------------------
-    | Step 2: Fetch variations for paginated products
-    |--------------------------------------------------------------------------
-    */
         $rows = DB::table('variations as v')
             ->join('products as p', 'p.id', '=', 'v.product_id')
             ->leftJoin('variation_location_details as vld', function ($q) use ($locationId) {
@@ -432,11 +421,6 @@ class ApiController extends Controller
             ->orderBy('p.id')
             ->get();
 
-        /*
-    |--------------------------------------------------------------------------
-    | Step 3: Group by Product
-    |--------------------------------------------------------------------------
-    */
         $products = $rows->groupBy('product_id')->map(function ($items) use ($location) {
 
             $first = $items->first();
@@ -519,8 +503,8 @@ class ApiController extends Controller
     public function getProductById(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'variation_id' => 'required',
-            'store_id' => 'required'
+            'variation_id' => 'required|integer',
+            'store_id'     => 'required|integer',
         ]);
 
         if ($validator->fails()) {
@@ -531,21 +515,34 @@ class ApiController extends Controller
             ], 422);
         }
 
-        $product = Variation::select(
+        $storeId = $request->store_id;
+
+        // Get location
+        $location = BusinessLocation::findOrFail($storeId);
+
+        // Fetch the variation with product info
+        $row = Variation::select(
             'p.id as product_id',
             'p.name as product_name',
-            'VLD.qty_available as quantity'
+            'p.enable_stock',
+            'p.image',
+            'variations.id as variation_id',
+            'variations.name as variation_name',
+            'variations.variation_value_id',
+            'variations.sub_sku',
+            'variations.default_sell_price',
+            'variations.is_synced',
+            DB::raw('IFNULL(VLD.qty_available,0) as qty_available')
         )
             ->join('products as p', 'variations.product_id', '=', 'p.id')
-            ->join('product_locations as pl', 'pl.product_id', '=', 'p.id')
-            ->leftJoin('variation_location_details as VLD', function ($join) use ($request) {
+            ->leftJoin('variation_location_details as VLD', function ($join) use ($storeId) {
                 $join->on('variations.id', '=', 'VLD.variation_id')
-                    ->where('VLD.location_id', $request->store_id);  // Filter by location
+                    ->where('VLD.location_id', $storeId);
             })
             ->where('variations.id', $request->variation_id)
             ->first();
 
-        if (!$product) {
+        if (!$row) {
             return response()->json([
                 'Status'     => '1',
                 'error_code' => 404,
@@ -554,15 +551,62 @@ class ApiController extends Controller
             ], 404);
         }
 
+        // Build response object like getProducts
+        $productObj = [
+            'FromShop' => $location->name,
+            'ToShop'   => 0,
+            'StrName'  => $location->name,
+            'Skip'     => 0,
+            'StrId'    => $location->id,
+
+            'ProductId' => (int) $row->product_id,
+            'Name'      => $row->product_name,
+            'FreePrice' => $row->enable_stock == 0,
+            'ThumbPath' => $row->image ?? '',
+
+            'KeepId'           => (int) $row->product_id,
+            'DispatchQuantity' => 0,
+            'Quantity'         => (float) $row->qty_available,
+            'UnitPrice'        => (float) $row->default_sell_price,
+
+            'BarCode'       => '',
+            'AlternateCode' => '',
+
+            'StrShopRequestId' => 0,
+
+            'Unit'     => '',
+            'UnitCode' => 0,
+
+            'Attributes' => [[
+                'PosProductId'     => (int) $row->product_id,
+                'AttributeId'      => (int) $row->variation_id,
+                'Attribute'        => $row->variation_name ?? '',
+                'AttributeValueId' => $row->variation_value_id ?? 0,
+                'AttributeValue'   => $row->variation_name ?? '',
+            ]],
+
+            'QuantityLog' => [
+                'POSProductId' => (int) $row->product_id,
+                'KeepId'       => 0,
+                'StrProductId' => (int) $row->product_id,
+                'Quantity'     => (float) $row->qty_available,
+                'FromShopId'   => 0,
+                'ToShopId'     => 0,
+            ],
+
+            'isSync' => (bool) $row->is_synced
+        ];
+
         return response()->json([
             'Status'     => '0',
             'error_code' => null,
             'message'    => 'Success',
             'Response'   => [
-                'products' => $product
+                'products' => $productObj
             ]
         ], 200);
     }
+
 
 
     public function syncedProducts(Request $request)
