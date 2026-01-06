@@ -478,9 +478,9 @@ class ApiController extends Controller
                     return [
                         'PosProductId'     => (int) $row->product_id,
                         'AttributeId'      => (int) $row->variation_id,
-                        'Attribute'        => $row->variation_name ?? null,
-                        'AttributeValueId' => $row->variation_value_id ?? null,
-                        'AttributeValue'   => $row->variation_name ?? null,
+                        'Attribute'        => $row->variation_name ?? '',
+                        'AttributeValueId' => $row->variation_value_id ?? 0,
+                        'AttributeValue'   => $row->variation_name ?? '',
                     ];
                 })->values(),
 
