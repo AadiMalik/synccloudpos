@@ -519,7 +519,7 @@ class ApiController extends Controller
     public function getProductById(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'product_id' => 'required',
+            'variation_id' => 'required',
             'store_id' => 'required'
         ]);
 
@@ -542,7 +542,7 @@ class ApiController extends Controller
                 $join->on('variations.id', '=', 'VLD.variation_id')
                     ->where('VLD.location_id', $request->store_id);  // Filter by location
             })
-            ->where('p.id', $request->product_id)
+            ->where('variations.id', $request->variation_id)
             ->first();
 
         if (!$product) {
