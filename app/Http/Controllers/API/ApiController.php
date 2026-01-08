@@ -628,99 +628,115 @@ class ApiController extends Controller
 
     public function syncOrdersApi(Request $request)
     {
+        $request->validate([
+            'shop_id' => 'required|integer',
+            'orders' => 'required|array',
+        ]);
+
+        DB::beginTransaction();
+
         try {
-            $api_token = $request->header('API-TOKEN');
-            $api_settings = $this->moduleUtil->getApiSettings($api_token);
+            $location_id = $request->shop_id;
+            $shop = BusinessLocation::where('id', $location_id)->first();
+            $business_id = $shop->business_id;
+            foreach ($request->orders as $order) {
 
-            if (empty($api_settings)) {
-                return response()->json([
-                    'Status' => '1',
-                    'error_code' => null,
-                    'message' => 'Invalid API Token',
-                    'Response' => ['results' => []],
+                /** ===============================
+                 *  1️⃣ TRANSACTIONS
+                 * =============================== */
+
+                $transaction_id = DB::table('transactions')->insertGetId([
+                    'business_id'         => $business_id, // fixed / from auth
+                    'location_id'         => $location_id,
+                    'type'                => 'sell',
+                    'status'              => ($order['is_draft'] == 2) ? 'final' : 'draft',
+                    'payment_status'      => 'paid',
+                    'invoice_no'          => $order['receipt_no'],
+                    'transaction_date'    => Carbon::parse($order['created_at']),
+                    'total_before_tax'    => $order['total'],
+                    'discount_amount'     => $order['discount'] + ($order['local_discount'] ?? 0),
+                    'final_total'         => $order['total'],
+                    'additional_notes'    => $order['comments'] ?? null,
+                    'commission_agent'    => $order['sales_person_id'] ?: null,
+                    'created_by'          => $order['sales_person_id'],
+                    'is_created_from_api' => 1,
+                    'created_at'          => now(),
+                    'updated_at'          => now(),
                 ]);
-            }
 
-            $business_id = $api_settings->business_id;
-            $location_id = $api_settings->location_id;
+                /** ===============================
+                 *  2️⃣ SELL LINES
+                 *  NOTE: prouducts (typo)
+                 * =============================== */
 
-            $orders = $request->input('orders', []);
-            if (empty($orders)) {
-                return response()->json([
-                    'Status' => '1',
-                    'error_code' => null,
-                    'message' => 'No orders received',
-                    'Response' => ['results' => []],
-                ]);
-            }
+                foreach ($order['prouducts'] as $item) {
 
-            $synced_ids = [];
-
-            DB::beginTransaction();
-
-            foreach ($orders as $torder) {
-                $products = $torder['prouducts'] ?? []; // note typo from Node
-                unset($torder['prouducts']);
-
-                // ✅ Convert snake_case → camelCase if needed
-                $orderData = [];
-                foreach ($torder as $key => $value) {
-                    $orderData[\Illuminate\Support\Str::camel($key)] = $value;
+                    DB::table('transaction_sell_lines')->insert([
+                        'transaction_id'             => $transaction_id,
+                        'product_id'                 => $item['pos_product_id'], // IMPORTANT
+                        'variation_id'               => $item['keeping_id'],
+                        'quantity'                   => $item['quantity'],
+                        'unit_price_before_discount' => $item['unit_price'],
+                        'unit_price'                 => $item['unit_price'],
+                        'line_discount_amount'       => $item['discount'] ?? 0,
+                        'unit_price_inc_tax'         => $item['unit_price'],
+                        'sell_line_note'             => null,
+                        'created_at'                 => now(),
+                        'updated_at'                 => now(),
+                    ]);
                 }
 
-                // ✅ Required columns that NodeJS inserted manually
-                $orderData['business_id'] = $business_id;
-                $orderData['location_id'] = $location_id;
-                $orderData['is_draft'] = $orderData['isDraft'] ?? false;
-                $orderData['final_total'] = $orderData['totalAmount'] ?? 0;
-                $orderData['status'] = $orderData['is_draft'] ? 'draft' : 'final';
-                $orderData['created_by'] = $api_settings->user_id ?? 1; // 🔸 Hardcoded fallback
-                $orderData['transaction_date'] = now();
+                /** ===============================
+                 *  3️⃣ PAYMENTS
+                 * =============================== */
 
-                // 🔸 Need table/columns to store external order ID (from POS or App)
-                // Suggest adding: external_order_id VARCHAR(100)
-                $orderData['external_order_id'] = $torder['id'] ?? null;
+                // CASH
+                if ($order['cash_amount'] > 0) {
+                    DB::table('transaction_payments')->insert([
+                        'transaction_id' => $transaction_id,
+                        'business_id'    => $business_id,
+                        'amount'         => $order['cash_amount'],
+                        'method'         => 'cash',
+                        'payment_type'   => 'sell',
+                        'paid_on'        => Carbon::parse($order['created_at']),
+                        'created_by'     => $order['sales_person_id'],
+                        'created_at'     => now(),
+                        'updated_at'     => now(),
+                    ]);
+                }
 
-                // 🔸 Create Order transaction
-                $transaction = Transaction::create($orderData);
-                $synced_ids[] = ['id' => $transaction->id];
-
-                // 🔸 Insert related products
-                foreach ($products as $product) {
-                    $productData = [];
-                    foreach ($product as $key => $value) {
-                        $productData[\Illuminate\Support\Str::camel($key)] = $value;
-                    }
-
-                    $productData['transaction_id'] = $transaction->id;
-                    $productData['business_id'] = $business_id;
-                    $productData['location_id'] = $location_id;
-                    $productData['subtotal'] = ($productData['unitPrice'] ?? 0) * ($productData['quantity'] ?? 0);
-
-                    TransactionSellLine::create($productData);
+                // CARD
+                if ($order['card_amount'] > 0) {
+                    DB::table('transaction_payments')->insert([
+                        'transaction_id' => $transaction_id,
+                        'business_id'    => 1,
+                        'amount'         => $order['card_amount'],
+                        'method'         => 'card',
+                        'payment_type'   => 'sell',
+                        'paid_on'        => Carbon::parse($order['created_at']),
+                        'created_by'     => $order['sales_person_id'],
+                        'created_at'     => now(),
+                        'updated_at'     => now(),
+                    ]);
                 }
             }
 
             DB::commit();
 
             return response()->json([
-                'Status' => '0',
-                'error_code' => null,
-                'message' => 'Success',
-                'Response' => ['results' => $synced_ids],
+                'success' => true,
+                'message' => 'Orders synced successfully'
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Sync Order API Error: ' . $e->getMessage() . ' | Line: ' . $e->getLine());
 
             return response()->json([
-                'Status' => '1',
-                'error_code' => null,
-                'message' => 'Failed!',
-                'Response' => ['results' => [$e->getMessage()]],
-            ]);
+                'success' => false,
+                'error'   => $e->getMessage()
+            ], 500);
         }
     }
+
 
     public function getCustomer(Request $request)
     {
