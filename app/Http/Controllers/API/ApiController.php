@@ -628,11 +628,18 @@ class ApiController extends Controller
 
     public function syncOrdersApi(Request $request)
     {
-        $request->validate([
+        $validator = Validator::make($request->all(), [
             'shop_id' => 'required|integer',
             'orders' => 'required|array',
         ]);
 
+        if ($validator->fails()) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Validation errors',
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
         DB::beginTransaction();
 
         try {
