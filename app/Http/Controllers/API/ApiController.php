@@ -372,7 +372,7 @@ class ApiController extends Controller
 
         if ($validator->fails()) {
             return response()->json([
-                'status'  => false,
+                'status'  => '0',
                 'message' => 'Validation errors',
                 'errors'  => $validator->errors(),
             ], 422);
@@ -509,7 +509,7 @@ class ApiController extends Controller
 
         if ($validator->fails()) {
             return response()->json([
-                'status'  => false,
+                'status'  => '0',
                 'message' => 'Validation errors',
                 'errors'  => $validator->errors(),
             ], 422);
@@ -607,12 +607,61 @@ class ApiController extends Controller
         ], 200);
     }
 
+    public function getProductInventory(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'store_id'        => 'required|integer',
+            'variation_ids'   => 'nullable|array',
+            'variation_ids.*' => 'integer',
+        ]);
 
+        if ($validator->fails()) {
+            return response()->json([
+                'Status'  => 0,
+                'message' => 'Validation errors',
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
+
+        $storeId      = $request->store_id;
+        $variationIds = $request->variation_ids ?? [];
+
+        $query = Variation::select(
+            'variations.id as variation_id',
+            'variations.product_id',
+            DB::raw('IFNULL(VLD.qty_available,0) as available_stock')
+        )
+            ->leftJoin('variation_location_details as VLD', function ($join) use ($storeId) {
+                $join->on('variations.id', '=', 'VLD.variation_id')
+                    ->where('VLD.location_id', $storeId);
+            })
+            ->where('variations.is_synced', 1);
+
+        // ✅ If variation_ids array exists → filter
+        if (!empty($variationIds)) {
+            $query->whereIn('variations.id', $variationIds);
+        }
+
+        $data = $query->get();
+
+        return response()->json([
+            'Status'     => '1',
+            'error_code' => null,
+            'message'    => 'Success',
+            'Response'   => [
+                'data' => $data,
+            ],
+        ], 200);
+    }
 
     public function syncedProducts(Request $request)
     {
         if (!is_array($request->keepings)) {
-            return response()->json(['message' => 'Sync status update error.'], 422);
+            return response()->json([
+                'Status'  => '0',
+                'message' => 'Sync status update error.',
+                'errors'   => 'keepings is not an array.',
+            ], 422);
         }
         try {
             $keepingIds = collect($request->keepings)->pluck('keeping_id')->toArray();
@@ -620,9 +669,18 @@ class ApiController extends Controller
             // Update all records in bulk
             Variation::whereIn('id', $keepingIds)
                 ->update(['is_synced' => 1]);
-            return response()->json(['message' => 'Sync status updated successfully']);
+            return response()->json([
+                'Status'  => '1',
+                'error_code' => null,
+                'message' => 'Sync status updated successfully',
+                'Response' => []
+            ]);
         } catch (Exception $e) {
-            return response()->json(['message' => 'Internal Server Error', 'error' => $e->getMessage()], 500);
+            return response()->json([
+                'Status' => '0',
+                'message' => 'Internal Server Error',
+                'errors' => $e->getMessage()
+            ], 500);
         }
     }
 
@@ -635,7 +693,7 @@ class ApiController extends Controller
 
         if ($validator->fails()) {
             return response()->json([
-                'status'  => false,
+                'Status'  => '0',
                 'message' => 'Validation errors',
                 'errors'  => $validator->errors(),
             ], 422);
@@ -646,6 +704,7 @@ class ApiController extends Controller
             $location_id = $request->shop_id;
             $shop = BusinessLocation::where('id', $location_id)->first();
             $business_id = $shop->business_id;
+            $syncedReceipts = [];
             foreach ($request->orders as $order) {
 
                 /** ===============================
@@ -726,20 +785,27 @@ class ApiController extends Controller
                         'updated_at'     => now(),
                     ]);
                 }
+                $syncedReceipts[] = $order['receipt_no'];
             }
 
             DB::commit();
 
             return response()->json([
-                'success' => true,
-                'message' => 'Orders synced successfully'
+                'Status'  => '1',
+                'error_code' => null,
+                'message' => 'Orders synced successfully',
+                'Response'   => [
+                    'data' => $syncedReceipts,
+                ],
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
 
             return response()->json([
-                'success' => false,
-                'error'   => $e->getMessage()
+                'Status'  => '0',
+                'message' =>  'Server Error',
+                'errors'  => $e->getMessage(),
+                'Response'   => []
             ], 500);
         }
     }

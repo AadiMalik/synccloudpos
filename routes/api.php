@@ -29,6 +29,7 @@ Route::middleware('auth:api')->group(function () {
     Route::get('/get-users', [ApiController::class, 'getUsers']);
     Route::post('/get-products', [ApiController::class, 'getProducts']);
     Route::post('/get-product-by-id', [ApiController::class, 'getProductById']);
+    Route::post('/get-product-inventory', [ApiController::class, 'getProductInventory']);
     Route::post('/synced-products', [ApiController::class, 'syncedProducts']);
     Route::post('/sync-orders', [ApiController::class, 'syncOrdersApi']);
     Route::post('/get-customer', [ApiController::class, 'getCustomer']);
