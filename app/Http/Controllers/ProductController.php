@@ -810,6 +810,7 @@ class ProductController extends Controller
                 $variation->profit_percent = $this->productUtil->num_uf($single_data['profit_percent']);
                 $variation->default_sell_price = $this->productUtil->num_uf($single_data['single_dsp']);
                 $variation->sell_price_inc_tax = $this->productUtil->num_uf($single_data['single_dsp_inc_tax']);
+                $variation->is_synced = 0;
                 $variation->save();
 
                 Media::uploadMedia($product->business_id, $variation, $request, 'variation_images');
@@ -851,6 +852,7 @@ class ProductController extends Controller
                 $variation->default_sell_price = $this->productUtil->num_uf($request->input('selling_price'));
                 $variation->sell_price_inc_tax = $this->productUtil->num_uf($request->input('selling_price_inc_tax'));
                 $variation->combo_variations = $combo_variations;
+                $variation->is_synced = 0;
                 $variation->save();
             }
 

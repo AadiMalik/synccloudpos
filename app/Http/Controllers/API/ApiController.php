@@ -706,7 +706,16 @@ class ApiController extends Controller
             $business_id = $shop->business_id;
             $syncedReceipts = [];
             foreach ($request->orders as $order) {
+                $alreadyExists = DB::table('transactions')
+                    ->where('invoice_no', $order['receipt_no'])
+                    ->where('business_id', $business_id)
+                    ->where('location_id', $location_id)
+                    ->exists();
 
+                if ($alreadyExists) {
+                    // order skip
+                    continue;
+                }
                 /** ===============================
                  *  1️⃣ TRANSACTIONS
                  * =============================== */
