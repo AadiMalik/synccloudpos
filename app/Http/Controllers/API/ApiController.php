@@ -200,8 +200,17 @@ class ApiController extends Controller
             'store_code' => $location->location_id,
             'store_name' => $location->name,
             'shop_name' => $location->name,
-            'store_logo' => null,
-            'invoice_terms' => null,
+            'store_logo' => 'placeholder_brandlogo.png',
+            'pos_sync_time' => 1,
+            'all_products_sync' => 1,
+            'pos_discount_percentage' => 5,
+            'invoice_terms' => 'Thank you for shoping. <br>Items..',
+            'sale_return_code' => '',
+            '2025-04-02 16:00:40.340' => 0,
+            'hide_sales' => 0,
+            'print_able_name' => '',
+            'pos_discount_type' => 'percentage',
+            'allow_sale_if_qty_not_available' => 0,
         ];
         if (!$data) {
             return response()->json([

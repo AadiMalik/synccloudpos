@@ -43,10 +43,15 @@ class ManageUserController extends Controller
             $user_id = request()->session()->get('user.id');
 
             $users = User::where('business_id', $business_id)
-                        ->user()
-                        ->where('is_cmmsn_agnt', 0)
-                        ->select(['id', 'username',
-                            DB::raw("CONCAT(COALESCE(surname, ''), ' ', COALESCE(first_name, ''), ' ', COALESCE(last_name, '')) as full_name"), 'email', 'allow_login', ]);
+                ->user()
+                ->where('is_cmmsn_agnt', 0)
+                ->select([
+                    'id',
+                    'username',
+                    DB::raw("CONCAT(COALESCE(surname, ''), ' ', COALESCE(first_name, ''), ' ', COALESCE(last_name, '')) as full_name"),
+                    'email',
+                    'allow_login',
+                ]);
 
             return Datatables::of($users)
                 ->editColumn('username', '{{$username}} @if(empty($allow_login)) <span class="label bg-gray">@lang("lang_v1.login_not_allowed")</span>@endif')
@@ -106,14 +111,14 @@ class ManageUserController extends Controller
         $roles = $this->getRolesArray($business_id);
         $username_ext = $this->moduleUtil->getUsernameExtension();
         $locations = BusinessLocation::where('business_id', $business_id)
-                                    ->Active()
-                                    ->get();
+            ->Active()
+            ->get();
 
         //Get user form part from modules
         $form_partials = $this->moduleUtil->getModuleData('moduleViewPartials', ['view' => 'manage_user.create']);
 
         return view('manage_user.create')
-                ->with(compact('roles', 'username_ext', 'locations', 'form_partials'));
+            ->with(compact('roles', 'username_ext', 'locations', 'form_partials'));
     }
 
     /**
@@ -133,22 +138,39 @@ class ManageUserController extends Controller
                 $request['dob'] = $this->moduleUtil->uf_date($request->input('dob'));
             }
 
+            $location_id = null;
+
+            if ($request->has('location_permissions') && !empty($request->location_permissions)) {
+                // e.g. "location.1"
+                $location = $request->location_permissions[0];
+
+                $parts = explode('.', $location);
+                $location_id = $parts[1] ?? null;
+            }
+
+            // add into request so createUser() can save it
+            $request['location_id'] = $location_id;
+
             $request['cmmsn_percent'] = ! empty($request->input('cmmsn_percent')) ? $this->moduleUtil->num_uf($request->input('cmmsn_percent')) : 0;
 
             $request['max_sales_discount_percent'] = ! is_null($request->input('max_sales_discount_percent')) ? $this->moduleUtil->num_uf($request->input('max_sales_discount_percent')) : null;
             $request['is_register_report'] = ! empty($request->input('is_register_report')) ? 1 : 0;
 
             $user = $this->moduleUtil->createUser($request);
-
+            
+            $user->location_id = $location_id;
+            $user->save();
             event(new UserCreatedOrModified($user, 'added'));
 
-            $output = ['success' => 1,
+            $output = [
+                'success' => 1,
                 'msg' => __('user.user_added'),
             ];
         } catch (\Exception $e) {
-            \Log::emergency('File:'.$e->getFile().'Line:'.$e->getLine().'Message:'.$e->getMessage());
+            \Log::emergency('File:' . $e->getFile() . 'Line:' . $e->getLine() . 'Message:' . $e->getMessage());
 
-            $output = ['success' => 0,
+            $output = [
+                'success' => 0,
                 'msg' => __('messages.something_went_wrong'),
             ];
         }
@@ -171,8 +193,8 @@ class ManageUserController extends Controller
         $business_id = request()->session()->get('user.business_id');
 
         $user = User::where('business_id', $business_id)
-                    ->with(['contactAccess'])
-                    ->find($id);
+            ->with(['contactAccess'])
+            ->find($id);
 
         //Get user view part from modules
         $view_partials = $this->moduleUtil->getModuleData('moduleViewPartials', ['view' => 'manage_user.show', 'user' => $user]);
@@ -180,9 +202,9 @@ class ManageUserController extends Controller
         $users = User::forDropdown($business_id, false);
 
         $activities = Activity::forSubject($user)
-           ->with(['causer', 'subject'])
-           ->latest()
-           ->get();
+            ->with(['causer', 'subject'])
+            ->latest()
+            ->get();
 
         return view('manage_user.show')->with(compact('user', 'view_partials', 'users', 'activities'));
     }
@@ -201,8 +223,8 @@ class ManageUserController extends Controller
 
         $business_id = request()->session()->get('user.business_id');
         $user = User::where('business_id', $business_id)
-                    ->with(['contactAccess'])
-                    ->findOrFail($id);
+            ->with(['contactAccess'])
+            ->findOrFail($id);
 
         $roles = $this->getRolesArray($business_id);
 
@@ -215,7 +237,7 @@ class ManageUserController extends Controller
         }
 
         $locations = BusinessLocation::where('business_id', $business_id)
-                                    ->get();
+            ->get();
 
         $permitted_locations = $user->permitted_locations();
         $username_ext = $this->moduleUtil->getUsernameExtension();
@@ -224,7 +246,7 @@ class ManageUserController extends Controller
         $form_partials = $this->moduleUtil->getModuleData('moduleViewPartials', ['view' => 'manage_user.edit', 'user' => $user]);
 
         return view('manage_user.edit')
-                ->with(compact('roles', 'user', 'contact_access', 'is_checked_checkbox', 'locations', 'permitted_locations', 'form_partials', 'username_ext'));
+            ->with(compact('roles', 'user', 'contact_access', 'is_checked_checkbox', 'locations', 'permitted_locations', 'form_partials', 'username_ext'));
     }
 
     /**
@@ -241,17 +263,42 @@ class ManageUserController extends Controller
         if (! empty($notAllowed)) {
             return $notAllowed;
         }
-        
+
         if (! auth()->user()->can('user.update')) {
             abort(403, 'Unauthorized action.');
         }
 
         try {
-            $user_data = $request->only(['surname', 'first_name', 'last_name', 'email', 'selected_contacts', 'marital_status',
-                'blood_group', 'contact_number', 'fb_link', 'twitter_link', 'social_media_1',
-                'social_media_2', 'permanent_address', 'current_address',
-                'guardian_name', 'custom_field_1', 'custom_field_2','is_register_report',
-                'custom_field_3', 'custom_field_4', 'id_proof_name', 'id_proof_number', 'cmmsn_percent', 'gender', 'max_sales_discount_percent', 'family_number', 'alt_number', 'is_enable_service_staff_pin']);
+            $user_data = $request->only([
+                'surname',
+                'first_name',
+                'last_name',
+                'email',
+                'selected_contacts',
+                'marital_status',
+                'blood_group',
+                'contact_number',
+                'fb_link',
+                'twitter_link',
+                'social_media_1',
+                'social_media_2',
+                'permanent_address',
+                'current_address',
+                'guardian_name',
+                'custom_field_1',
+                'custom_field_2',
+                'is_register_report',
+                'custom_field_3',
+                'custom_field_4',
+                'id_proof_name',
+                'id_proof_number',
+                'cmmsn_percent',
+                'gender',
+                'max_sales_discount_percent',
+                'family_number',
+                'alt_number',
+                'is_enable_service_staff_pin'
+            ]);
 
             $user_data['status'] = ! empty($request->input('is_active')) ? 'active' : 'inactive';
 
@@ -272,6 +319,21 @@ class ManageUserController extends Controller
                 $user_data['allow_login'] = 1;
             }
 
+            $location_id = null;
+
+            if ($request->has('location_permissions') && !empty($request->location_permissions)) {
+                // first value e.g. "location.1"
+                $location = $request->location_permissions[0];
+
+                // explode by dot => ["location", "1"]
+                $parts = explode('.', $location);
+
+                $location_id = (int)$parts[1] ?? null;
+            }
+
+            // save in user_data
+            $user_data['location_id'] = $location_id;
+
             if (! empty($request->input('password'))) {
                 $user_data['password'] = $user_data['allow_login'] == 1 ? Hash::make($request->input('password')) : null;
                 $user_data['password_decript'] = $user_data['allow_login'] == 1 ? $request->input('password') : null;
@@ -281,7 +343,7 @@ class ManageUserController extends Controller
             if (! empty($request->input('service_staff_pin'))) {
                 $user_data['service_staff_pin'] = $request->input('service_staff_pin');
             }
-            
+
 
             //Sales commission percentage
             $user_data['cmmsn_percent'] = ! empty($user_data['cmmsn_percent']) ? $this->moduleUtil->num_uf($user_data['cmmsn_percent']) : 0;
@@ -312,8 +374,7 @@ class ManageUserController extends Controller
             }
 
             $user = User::where('business_id', $business_id)
-                          ->findOrFail($id);
-
+                ->findOrFail($id);
             $user->update($user_data);
             $role_id = $request->input('role');
             $user_role = $user->roles->first();
@@ -343,15 +404,18 @@ class ManageUserController extends Controller
                 $contact_ids = [];
             }
             $user->contactAccess()->sync($contact_ids);
-
+            
+            
             //Update module fields for user
             $this->moduleUtil->getModuleData('afterModelSaved', ['event' => 'user_saved', 'model_instance' => $user]);
 
             $this->moduleUtil->activityLog($user, 'edited', null, ['name' => $user->user_full_name]);
-           
+
             event(new UserCreatedOrModified($user, 'updated'));
-            
-            $output = ['success' => 1,
+            $user->location_id = $location_id;
+            $user->save();
+            $output = [
+                'success' => 1,
                 'msg' => __('user.user_update_success'),
             ];
 
@@ -359,9 +423,10 @@ class ManageUserController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
 
-            \Log::emergency('File:'.$e->getFile().'Line:'.$e->getLine().'Message:'.$e->getMessage());
+            \Log::emergency('File:' . $e->getFile() . 'Line:' . $e->getLine() . 'Message:' . $e->getMessage());
 
-            $output = ['success' => 0,
+            $output = [
+                'success' => 0,
                 'msg' => $e->getMessage(),
             ];
         }
@@ -372,7 +437,7 @@ class ManageUserController extends Controller
     private function getAdmins()
     {
         $business_id = request()->session()->get('user.business_id');
-        $admins = User::role('Admin#'.$business_id)->get();
+        $admins = User::role('Admin#' . $business_id)->get();
 
         return $admins;
     }
@@ -407,13 +472,15 @@ class ManageUserController extends Controller
                 $user->delete();
                 event(new UserCreatedOrModified($user, 'deleted'));
 
-                $output = ['success' => true,
+                $output = [
+                    'success' => true,
                     'msg' => __('user.user_delete_success'),
                 ];
             } catch (\Exception $e) {
-                \Log::emergency('File:'.$e->getFile().'Line:'.$e->getLine().'Message:'.$e->getMessage());
+                \Log::emergency('File:' . $e->getFile() . 'Line:' . $e->getLine() . 'Message:' . $e->getMessage());
 
-                $output = ['success' => false,
+                $output = [
+                    'success' => false,
                     'msg' => __('messages.something_went_wrong'),
                 ];
             }
@@ -436,10 +503,10 @@ class ManageUserController extends Controller
         $is_admin = $this->moduleUtil->is_admin(auth()->user(), $business_id);
 
         foreach ($roles_array as $key => $value) {
-            if (! $is_admin && $value == 'Admin#'.$business_id) {
+            if (! $is_admin && $value == 'Admin#' . $business_id) {
                 continue;
             }
-            $roles[$key] = str_replace('#'.$business_id, '', $value);
+            $roles[$key] = str_replace('#' . $business_id, '', $value);
         }
 
         return $roles;
