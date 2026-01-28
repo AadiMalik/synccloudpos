@@ -769,7 +769,6 @@ class ApiController extends Controller
                         'updated_at'                 => now(),
                     ]);
                     DB::table('variation_location_details')
-                        ->where('product_id', $item['pos_product_id'])
                         ->where('variation_id', $item['keeping_id'])
                         ->where('location_id', $location_id)
                         ->decrement('qty_available', $item['quantity']);
