@@ -206,9 +206,8 @@ class ApiController extends Controller
             'pos_discount_percentage' => 5,
             'invoice_terms' => 'Thank you for shoping. <br>Items..',
             'sale_return_code' => '',
-            '2025-04-02 16:00:40.340' => 0,
             'hide_sales' => 0,
-            'print_able_name' => '',
+            'print_able_name' => $location->name,
             'pos_discount_type' => 'percentage',
             'allow_sale_if_qty_not_available' => 0,
         ];
@@ -732,6 +731,7 @@ class ApiController extends Controller
                 $transaction_id = DB::table('transactions')->insertGetId([
                     'business_id'         => $business_id, // fixed / from auth
                     'location_id'         => $location_id,
+                    'contact_id'          => 1,
                     'type'                => 'sell',
                     'status'              => ($order['is_draft'] == 2) ? 'final' : 'draft',
                     'payment_status'      => 'paid',
