@@ -8,6 +8,7 @@ use App\PurchaseLine;
 use App\Transaction;
 use App\Utils\ProductUtil;
 use App\Utils\TransactionUtil;
+use App\Variation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -364,7 +365,8 @@ class OpeningStockController extends Controller
                         }
                     }
                 }
-
+                Variation::where('product_id', $product->id)
+                ->update(['is_synced' => 0]);
                 DB::commit();
             }
 
