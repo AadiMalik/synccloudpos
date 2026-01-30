@@ -754,7 +754,19 @@ class ApiController extends Controller
                  * =============================== */
 
                 foreach ($order['prouducts'] as $item) {
-
+                    $stockRow = DB::table('variation_location_details')
+                        ->where('variation_id', $item['keeping_id'])
+                        ->where('location_id', $location_id)
+                        ->first();
+                    if ($stockRow->qty_available === null || $stockRow->qty_available < $item['quantity']) {
+                        DB::rollBack();
+                        return response()->json([
+                            'Status' => '0',
+                            'message' => 'Insufficient stock',
+                            'errors' => 'Insufficient stock for product ID: ' . $item['pos_product_id'] . ' and available stock is ' . $stockRow->qty_available,
+                            'Response' => []
+                        ], 400);
+                    }
                     DB::table('transaction_sell_lines')->insert([
                         'transaction_id'             => $transaction_id,
                         'product_id'                 => $item['pos_product_id'], // IMPORTANT
@@ -771,7 +783,9 @@ class ApiController extends Controller
                     DB::table('variation_location_details')
                         ->where('variation_id', $item['keeping_id'])
                         ->where('location_id', $location_id)
-                        ->decrement('qty_available', $item['quantity']);
+                        ->update([
+                            'qty_available' => DB::raw('qty_available - ' . (float) $item['quantity'])
+                        ]);
                 }
 
                 /** ===============================
