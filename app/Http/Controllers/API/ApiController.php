@@ -449,7 +449,7 @@ class ApiController extends Controller
                 'ThumbPath' => $first->image ?? '',
 
                 // ========== Stock ==========
-                'KeepId'           => (int) $first->product_id,
+                'KeepId'           => (int) $first->variation_id,
                 'DispatchQuantity' => 0,
                 'Quantity'         => (float) $items->sum('qty_available'),
                 'UnitPrice'        => (float) $items->min('default_sell_price'),
@@ -479,7 +479,7 @@ class ApiController extends Controller
                 // ========== Quantity Log ==========
                 'QuantityLog' => [
                     'POSProductId' => (int) $first->product_id,
-                    'KeepId'       => 0,
+                    'KeepId'       => (int) $first->variation_id,
                     'StrProductId' => (int) $first->product_id,
                     'Quantity'     => (float) $items->sum('qty_available'),
                     'FromShopId'   => 0,
