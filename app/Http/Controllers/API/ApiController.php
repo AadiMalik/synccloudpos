@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API;
 use App\Business;
 use App\BusinessLocation;
 use App\Contact;
+use App\Discount;
 use App\Http\Controllers\Controller;
 use App\Product;
 use App\Transaction;
@@ -892,34 +893,42 @@ class ApiController extends Controller
             ], 500);
         }
     }
-    public function getCustomDiscounts()
+    public function getCustomDiscounts(Request $request)
     {
-        try {
+        $validator = Validator::make($request->all(), [
+            'shop_id'      => 'required',
+        ]);
 
-            $data = [
-                [
-                    'id' => 1,
-                    'category_id' => 1,
-                    'title' => 'Discount 1',
-                    'description' => 'Description for Discount 1',
-                    'discount_type' => 0,
-                    'discount_value' => 10.0,
-                    'created_at' => now()->toDateTimeString(),
-                    'updated_at' => now()->toDateTimeString(),
+        if ($validator->fails()) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Validation errors',
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
+        try {
+            $query = Discount::query()
+                ->where('is_active', 1)->where('location_id', $request->shop_id); // only active discounts
+
+            // Fetch data
+            $discounts = $query->orderBy('priority', 'asc')->get();
+
+            // Format response
+            $data = $discounts->map(function ($discount) {
+                return [
+                    'id' => $discount->id,
+                    'category_id' => $discount->category_id,
+                    'title' => $discount->name,
+                    'description' => '', // you can add a description column if needed
+                    'discount_type' => $discount->discount_type,
+                    'discount_value' => (float) $discount->discount_amount,
+                    'starts_at' => $discount->starts_at?->toDateTimeString(),
+                    'ends_at' => $discount->ends_at?->toDateTimeString(),
+                    'created_at' => $discount->created_at?->toDateTimeString(),
+                    'updated_at' => $discount->updated_at?->toDateTimeString(),
                     'is_deleted' => false,
-                ],
-                [
-                    'id' => 2,
-                    'category_id' => 2,
-                    'title' => 'Discount 2',
-                    'description' => 'Description for Discount 2',
-                    'discount_type' => 1,
-                    'discount_value' => 5.0,
-                    'created_at' => now()->toDateTimeString(),
-                    'updated_at' => now()->toDateTimeString(),
-                    'is_deleted' => false,
-                ],
-            ];
+                ];
+            });
 
             return response()->json([
                 'Status' => '0',
