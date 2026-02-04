@@ -917,7 +917,7 @@ class ApiController extends Controller
             $data = $discounts->map(function ($discount) {
                 return [
                     'id' => $discount->id,
-                    'category_id' => $discount->category_id,
+                    'category_id' => $discount->category_id??0,
                     'title' => $discount->name,
                     'description' => '', // you can add a description column if needed
                     'discount_type' => $discount->discount_type,
