@@ -798,7 +798,7 @@ class ApiController extends Controller
                     DB::table('transaction_payments')->insert([
                         'transaction_id' => $transaction_id,
                         'business_id'    => $business_id,
-                        'amount'         => $order['cash_amount'],
+                        'amount'         => $order['total'],
                         'method'         => 'cash',
                         'payment_type'   => 'sell',
                         'paid_on'        => Carbon::parse($order['created_at']),
@@ -812,8 +812,8 @@ class ApiController extends Controller
                 if ($order['card_amount'] > 0) {
                     DB::table('transaction_payments')->insert([
                         'transaction_id' => $transaction_id,
-                        'business_id'    => 1,
-                        'amount'         => $order['card_amount'],
+                        'business_id'    => $business_id,
+                        'amount'         => $order['total'],
                         'method'         => 'card',
                         'payment_type'   => 'sell',
                         'paid_on'        => Carbon::parse($order['created_at']),
